@@ -43,6 +43,27 @@ on: [push to main with specific paths]
 - Crea PR para version bump
 - Publica automáticamente cuando se mergea a main
 
+## 🔒 Configuración de GitHub Environments (Recomendado)
+
+Los workflows incluyen configuración de `environment: production` para mayor seguridad:
+
+### Beneficios de usar Environments:
+- **Protección contra publicaciones accidentales**
+- **Control de acceso granular** (quién puede hacer publish)
+- **Required reviews** antes de publicar
+- **Branch protection** para el entorno de producción
+- **Audit trail** de quién aprobó cada publicación
+
+### Cómo configurar el Environment "production":
+1. Ve a tu repositorio en GitHub
+2. **Settings** → **Environments**
+3. Click **New environment**
+4. Nombre: `production`
+5. **Optional protections**:
+   - ✅ "Required reviewers" (agregar maintainers)
+   - ✅ "Wait timer" (ej: 5 minutos para revisión)
+   - ✅ "Deployment branches" (solo main branch)
+
 ## 🔧 Configuración de Secrets
 
 Para que los workflows funcionen correctamente, necesitas configurar estos secrets en tu repositorio de GitHub:
@@ -178,6 +199,53 @@ Error: 403 Forbidden - PUT https://registry.npmjs.org/akuri-oma-state-control
 - [npm Publishing Guide](https://docs.npmjs.com/packages-and-modules/contributing-packages-to-the-registry)
 - [Conventional Commits](https://www.conventionalcommits.org/)
 
+## 🔒 Seguridad y Mejores Prácticas
+
+### Configuración de Environment "production":
+- **Required reviewers**: Agrega maintainers que deben aprobar cada publicación
+- **Wait timer**: 5-10 minutos para permitir cancelación en caso de error
+- **Branch restrictions**: Solo permite deployments desde main/production branches
+
+### Protección adicional recomendada:
+```bash
+# En Settings → Branches
+# Agregar rule para main branch:
+# ✅ Require pull request reviews before merging
+# ✅ Dismiss stale reviews when new commits are pushed  
+# ✅ Require status checks to pass before merging
+# ✅ Require branches to be up to date before merging
+```
+
+### Roles y permisos:
+- **Maintainers**: Pueden aprobar publicaciones
+- **Contributors**: Pueden crear PRs pero no publicar directamente
+- **Collaborators**: Acceso de solo lectura
+
+### NPM Token Security:
+- ✅ Usar tokens de tipo "Automation" (más restrictivos)
+- ✅ Rotar tokens regularmente
+- ✅ Monitorear uso de tokens en npm dashboard
+- ✅ Revocar tokens inmediatamente si hay sospecha de compromiso
+
+### Monitoring y Alerts:
+- Configurar GitHub webhooks para notifications de failures
+- Monitorear npm package para uso inusual
+- Revisar logs de GitHub Actions regularmente
+
 ---
 
-**💡 Tip**: Empieza con publicación manual por release hasta estar cómodo con el proceso, luego activa auto-versioning.
+## 📊 Workflow Status Dashboard
+
+### Indicadores de salud del proyecto:
+- **🟢 Verde**: CI passing, última publicación exitosa
+- **🟡 Amarillo**: CI running, construcción en progreso  
+- **🔴 Rojo**: CI failure, revisión de logs requerida
+
+### Métricas importantes:
+- Tiempo promedio de build: < 5 minutos
+- Frecuencia de releases: Semanal/Mensual
+- Success rate de publicaciones: > 95%
+
+---
+
+**💡 Tip**: Empieza con publicación manual por release hasta estar cómodo con el proceso, luego activa auto-versioning con environment protection enabled.

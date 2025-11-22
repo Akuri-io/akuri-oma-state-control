@@ -13,6 +13,11 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: production  # GitHub Environment para publicación
+    # Esto permite:
+    # - Proteger con required reviews
+    # - Limitar qué branches pueden hacer publish
+    # - Agregar checks adicionales antes de publicar
     
     steps:
     - name: Checkout code

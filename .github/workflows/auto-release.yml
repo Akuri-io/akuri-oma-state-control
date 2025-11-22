@@ -106,6 +106,7 @@ jobs:
     needs: auto-version
     runs-on: ubuntu-latest
     if: needs.auto-version.outputs.created == 'true'
+    environment: production  # GitHub Environment para publicación automática
     
     steps:
     - name: Checkout code
