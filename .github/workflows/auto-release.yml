@@ -1,0 +1,150 @@
+name: Auto Version and Release
+
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - 'src/**'
+      - 'package.json'
+      - 'ng-package.json'
+      - 'tsconfig.json'
+
+jobs:
+  auto-version:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip version]')"
+    
+    outputs:
+      version: ${{ steps.version.outputs.new-version }}
+      created: ${{ steps.version.outputs.created }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Configure Git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+    - name: Determine version bump type
+      id: version-type
+      run: |
+        # Obtener el último commit y el commit anterior
+        LAST_COMMIT=$(git log --oneline -1)
+        PREVIOUS_COMMIT=$(git log --oneline -2 | tail -n 1)
+        
+        # Analizar el commit message para determinar el tipo de versión
+        COMMIT_MSG=$(git log --format=%B -n 1 HEAD)
+        
+        if echo "$COMMIT_MSG" | grep -qE "^(feat|feature)(\(.+\))?!:|^BREAKING CHANGE:"; then
+          echo "type=major" >> $GITHUB_OUTPUT
+        elif echo "$COMMIT_MSG" | grep -qE "^(feat|feature)(\(.+\))?:|^(fix)(\(.+\))?:|^docs(\(.+\))?!:"; then
+          echo "type=minor" >> $GITHUB_OUTPUT  
+        else
+          echo "type=patch" >> $GITHUB_OUTPUT
+        fi
+        
+        echo "🔍 Último commit: $LAST_COMMIT"
+        echo "📋 Tipo de cambio detectado: ${{ steps.version-type.outputs.type }}"
+        
+    - name: Bump version
+      id: version
+      run: |
+        cd akuri-oma-state-control
+        
+        # Instalar dependencies primero
+        npm ci > /dev/null 2>&1
+        
+        # Obtener versión actual
+        CURRENT_VERSION=$(node -p "require('./package.json').version")
+        echo "📋 Versión actual: $CURRENT_VERSION"
+        
+        # Bump version basado en el tipo detectado
+        NEW_VERSION=$(npm version ${{ steps.version-type.outputs.type }} --no-git-tag-version --allow-same-version)
+        echo "📦 Nueva versión: $NEW_VERSION"
+        
+        echo "new-version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        
+        # Verificar si se creó una nueva versión
+        if [ "$CURRENT_VERSION" != "$NEW_VERSION" ]; then
+          echo "created=true" >> $GITHUB_OUTPUT
+        else
+          echo "created=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Create Pull Request
+      if: steps.version.outputs.created == 'true'
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: "chore: bump version to ${{ steps.version.outputs.new-version }}"
+        title: "🚀 Release v${{ steps.version.outputs.new-version }}"
+        body: |
+          ## 🚀 Release v${{ steps.version.outputs.new-version }}
+          
+          ### 📋 Detalles del Release
+          - **Versión anterior**: ${{ steps.version.outputs.current-version }}
+          - **Nueva versión**: ${{ steps.version.outputs.new-version }}
+          - **Tipo de cambio**: ${{ steps.version-type.outputs.type }}
+          
+          ### 🔄 Cambios Incluidos
+          ${{ github.event.head_commit.message }}
+          
+          ### ✅ Siguiente Paso
+          Este PR puede ser mergeado para activar la publicación automática.
+          
+          ---
+          *Generado automáticamente por GitHub Actions*
+        branch: release/v${{ steps.version.outputs.new-version }}
+        delete-branch: true
+        
+  auto-publish:
+    needs: auto-version
+    runs-on: ubuntu-latest
+    if: needs.auto-version.outputs.created == 'true'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: 'akuri-oma-state-control/package-lock.json'
+        registry-url: 'https://registry.npmjs.org'
+        
+    - name: Build and publish
+      run: |
+        cd akuri-oma-state-control
+        npm ci
+        npm run build
+        npm publish --access public
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ needs.auto-version.outputs.version }}
+        release_name: Release v${{ needs.auto-version.outputs.version }}
+        body: |
+          ## 🚀 AKURI OMA State Control v${{ needs.auto-version.outputs.version }}
+          
+          ### 📋 Cambios
+          ${{ github.event.head_commit.message }}
+          
+          ### 📦 Paquete npm
+          Instalar: `npm install akuri-oma-state-control@${{ needs.auto-version.outputs.version }}`
+          
+        draft: false
+        prerelease: false

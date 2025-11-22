@@ -1,0 +1,133 @@
+name: Publish to NPM
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Necesario para obtener todos los tags
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: 'akuri-oma-state-control/package-lock.json'
+        registry-url: 'https://registry.npmjs.org'
+        
+    - name: Install dependencies
+      run: |
+        cd akuri-oma-state-control
+        npm ci
+        
+    - name: Build library
+      run: |
+        cd akuri-oma-state-control
+        npm run build
+        
+    - name: Verify build output
+      run: |
+        cd akuri-oma-state-control
+        echo "🔍 Verificando archivos de build..."
+        ls -la dist/
+        
+        if [ ! -f "dist/fesm2022/akuri-oma-state-control.mjs" ]; then
+          echo "❌ Build fallido: archivo principal no encontrado"
+          exit 1
+        fi
+        
+        if [ ! -f "dist/index.d.ts" ]; then
+          echo "❌ Build fallido: definiciones TypeScript no encontradas"
+          exit 1
+        fi
+        
+        echo "✅ Build verificado correctamente"
+        
+    - name: Get version from release tag
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          # Extraer versión del tag de release (v1.0.0 -> 1.0.0)
+          VERSION=${GITHUB_REF#refs/tags/v}
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "📦 Publicando versión: $VERSION"
+        
+    - name: Update package.json version
+      run: |
+        cd akuri-oma-state-control
+        CURRENT_VERSION=$(node -p "require('./package.json').version")
+        echo "📋 Versión actual en package.json: $CURRENT_VERSION"
+        
+        # Solo actualizar si es necesario
+        if [ "$CURRENT_VERSION" != "${{ steps.version.outputs.VERSION }}" ]; then
+          echo "🔄 Actualizando package.json a versión ${{ steps.version.outputs.VERSION }}"
+          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
+        else
+          echo "✅ Versión ya es correcta: $CURRENT_VERSION"
+        fi
+        
+    - name: Create package archive
+      run: |
+        cd akuri-oma-state-control
+        npm pack
+        echo "📦 Paquete creado: $(ls *.tgz)"
+        
+    - name: Publish to NPM
+      run: |
+        cd akuri-oma-state-control
+        echo "🚀 Publicando en npm..."
+        npm publish --access public
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        
+    - name: Create Git tag (if publishing from release)
+      if: github.event_name == 'release'
+      run: |
+        cd akuri-oma-state-control
+        TAG_NAME="v${{ steps.version.outputs.VERSION }}"
+        
+        # Crear tag con annotation
+        git tag -a $TAG_NAME -m "Release $TAG_NAME"
+        echo "🏷️ Tag creado: $TAG_NAME"
+        
+        # Nota: El tag se pusheará cuando se haga merge del PR
+        # o se puede hacer manualmente con: git push origin $TAG_NAME
+        
+    - name: Upload release assets
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          akuri-oma-state-control/*.tgz
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Success notification
+      run: |
+        echo "🎉 ¡Publicación exitosa!"
+        echo "📦 Versión: ${{ steps.version.outputs.VERSION }}"
+        echo "🌐 npm package: https://www.npmjs.com/package/akuri-oma-state-control"
+        
+    - name: Failure notification
+      if: failure()
+      run: |
+        echo "❌ Error en la publicación"
+        echo "🔍 Revisar logs para más detalles"
+        exit 1
