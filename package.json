@@ -1,0 +1,60 @@
+{
+  "name": "akuri-oma-state-control",
+  "version": "1.0.0",
+  "description": "Observable Model Architecture (OMA) state management library for Angular with Signals and RxJS support",
+  "main": "dist/fesm2022/akuri-oma-state-control.mjs",
+  "module": "dist/fesm2022/akuri-oma-state-control.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "ng-packagr -p ng-package.json",
+    "watch": "ng-packagr -p ng-package.json --watch",
+    "test": "jest",
+    "lint": "ng lint",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "angular",
+    "state-management",
+    "signals",
+    "rxjs",
+    "oma",
+    "observable-model-architecture",
+    "state-control",
+    "akuri"
+  ],
+  "author": "AKURI Team",
+  "license": "MIT",
+  "peerDependencies": {
+    "@angular/core": "^20.0.0",
+    "rxjs": "^7.8.0"
+  },
+  "dependencies": {
+    "tslib": "^2.6.0"
+  },
+  "devDependencies": {
+    "@angular/core": "^20.2.0",
+    "@angular/common": "^20.2.0",
+    "rxjs": "~7.8.0",
+    "typescript": "~5.9.2",
+    "ng-packagr": "^20.0.0",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.0",
+    "ts-jest": "^29.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akuri-team/oma-state-control.git"
+  },
+  "bugs": {
+    "url": "https://github.com/akuri-team/oma-state-control/issues"
+  },
+  "homepage": "https://github.com/akuri-team/oma-state-control#readme",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
