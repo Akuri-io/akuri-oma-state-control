@@ -7,6 +7,7 @@
 # Only exists if Bazel was run
 /bazel-out
 /GUIA_PUBLICACION_NPM.md
+/EXAMPLES.md
 
 # Node modules
 /node_modules
