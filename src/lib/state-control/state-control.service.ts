@@ -147,7 +147,7 @@ export class OMAStateControlService {
    * Restore persisted data with optional orchestrator
    */
   restore(orchestratorStorage?: SessionStorage<any>): void {
-    this.storage.restore(orchestratorStorage);
+    this.storage.restore();
   }
 
   /**

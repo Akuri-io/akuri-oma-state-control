@@ -1,11 +1,52 @@
 /**
  * Permanent configuration interface for selective state persistence
  * Used to define which properties should persist in localStorage, sessionStorage, or orchestrator
+ * 
+ * DUAL-COMPATIBILITY DESIGN:
+ * This interface supports both interface-based and class-based usage patterns
+ * for full compatibility between blueprint and library implementations.
  */
-export interface PermanentConfig {
+export interface IPermanentConfig {
   localStorage?: string[];  // Properties to persist in localStorage
   sessionStorage?: string[]; // Properties to persist in sessionStorage (not removed on exit)
   ido?: Record<string, string>; // Properties to transfer to orchestrator IDO
+}
+
+/**
+ * Dual-compatibility PermanentConfig class implementation
+ * 
+ * This class implements the PermanentConfig interface and provides
+ * both interface-based usage (constructor with options) and
+ * class-based usage (static/class properties) for complete compatibility
+ * with blueprint implementations that use static class properties.
+ * 
+ * USAGE PATTERNS:
+ * 
+ * 1. Interface Pattern (Library Style):
+ *    new PermanentConfig({ localStorage: ['user'], sessionStorage: ['profile'] })
+ * 
+ * 2. Class Pattern (Blueprint Style):
+ *    class MyConfig extends PermanentConfig {
+ *      static localStorage = ['user'];
+ *      static sessionStorage = ['profile'];
+ *    }
+ */
+export class PermanentConfigImpl implements IPermanentConfig {
+  localStorage?: string[];
+  sessionStorage?: string[];
+  ido?: Record<string, string>;
+  
+  /**
+   * Constructor for interface-style usage
+   * @param config Optional configuration object
+   */
+  constructor(config?: IPermanentConfig) {
+    if (config) {
+      this.localStorage = config.localStorage;
+      this.sessionStorage = config.sessionStorage;
+      this.ido = config.ido;
+    }
+  }
 }
 
 /**
@@ -21,9 +62,9 @@ export type UnwrapSignal<T> = T extends { (): infer V } ? V : T;
 export class SessionStorage<T extends object> {
   KEY_PREFIX = '';
   store: T;
-  permanent?: PermanentConfig;
+  permanent?: IPermanentConfig;
 
-  constructor(prefix: string, store: T, permanent?: PermanentConfig) {
+  constructor(prefix: string, store: T, permanent?: IPermanentConfig) {
     this.KEY_PREFIX = prefix;
     this.store = store;
     this.permanent = permanent;
@@ -49,351 +90,279 @@ export class SessionStorage<T extends object> {
       sessionStorage.setItem(this.KEY_PREFIX + String(key), serializedValue);
       this.store[key] = value as T[K];
     }
+
+    // Handle permanent storage configuration
+    this.handlePermanentStorage(key, value);
   }
 
   /**
-   * Enhanced get method that handles both signals and regular values
-   * For signals: returns the unwrapped value from the signal
-   * For regular values: returns the value directly
+   * Restore all stored data from sessionStorage and orchestrator
    */
-  get<K extends keyof T>(key: K, defaultValue?: UnwrapSignal<T[K]>): UnwrapSignal<T[K]> | null {
-    const item = sessionStorage.getItem(this.KEY_PREFIX + String(key));
-    if (item === null || item === undefined || item === 'undefined') {
-      return defaultValue ?? null;
+  restore(): void {
+    // Restore sessionStorage properties
+    for (const key of Object.keys(this.store)) {
+      const storageKey = this.KEY_PREFIX + key;
+      const storedValue = sessionStorage.getItem(storageKey);
+      
+      if (storedValue !== null) {
+        try {
+          const parsedValue = JSON.parse(storedValue);
+          
+          // Check if the property is a signal (has a 'set' method)
+          const storeProperty = this.store[key as keyof T];
+          if (storeProperty && typeof storeProperty === 'object' && 'set' in storeProperty && typeof (storeProperty as any).set === 'function') {
+            // It's a signal - update the signal with the restored value
+            (storeProperty as any).set(parsedValue);
+          } else {
+            // Regular property - restore directly
+            this.store[key as keyof T] = parsedValue as T[keyof T];
+          }
+        } catch (error) {
+          console.error(`Failed to restore ${key} from sessionStorage:`, error);
+        }
+      }
+    }
+    
+    // **CRITICAL FIX: Restore sessionStorage properties defined in permanent config**
+    if (this.permanent?.sessionStorage) {
+      for (const key of this.permanent.sessionStorage) {
+        const storageKey = this.KEY_PREFIX + key;
+        const storedValue = sessionStorage.getItem(storageKey);
+        
+        if (storedValue !== null) {
+          try {
+            const parsedValue = JSON.parse(storedValue);
+            
+            // Check if the property is a signal (has a 'set' method)
+            const storeProperty = this.store[key as keyof T];
+            if (storeProperty && typeof storeProperty === 'object' && 'set' in storeProperty && typeof (storeProperty as any).set === 'function') {
+              // It's a signal - update the signal with the restored value
+              (storeProperty as any).set(parsedValue);
+            } else {
+              // Regular property - restore directly
+              this.store[key as keyof T] = parsedValue as T[keyof T];
+            }
+            
+            console.log(`✅ Restored sessionStorage['${key}']`);
+          } catch (error) {
+            console.error(`Failed to restore ${key} from sessionStorage:`, error);
+          }
+        }
+      }
     }
 
-    try {
-      const parsedValue = JSON.parse(item);
-      const storeProperty = this.store[key];
-
-      // Check if the property is a signal
-      if (storeProperty && typeof storeProperty === 'object' && 'set' in storeProperty && typeof (storeProperty as any).set === 'function') {
-        // It's a signal - update the signal and return the value
-        (storeProperty as any).set(parsedValue);
-        return parsedValue;
-      } else {
-        // Regular property - store and return directly
-        this.store[key] = parsedValue;
-        return parsedValue;
+    // Restore localStorage properties
+    if (this.permanent?.localStorage) {
+      for (const key of this.permanent.localStorage) {
+        const storageKey = this.KEY_PREFIX + key;
+        const storedValue = localStorage.getItem(storageKey);
+        
+        if (storedValue !== null) {
+          try {
+            const parsedValue = JSON.parse(storedValue);
+            
+            // Check if the property is a signal (has a 'set' method)
+            const storeProperty = this.store[key as keyof T];
+            if (storeProperty && typeof storeProperty === 'object' && 'set' in storeProperty && typeof (storeProperty as any).set === 'function') {
+              // It's a signal - update the signal with the restored value
+              (storeProperty as any).set(parsedValue);
+            } else {
+              // Regular property - restore directly
+              this.store[key as keyof T] = parsedValue as T[keyof T];
+            }
+            
+            console.log(`✅ Restored localStorage['${key}']`);
+          } catch (error) {
+            console.error(`Failed to restore ${key} from localStorage:`, error);
+          }
+        }
       }
-    } catch (error) {
-      console.error('Error parsing stored data:', error);
-      return defaultValue ?? null;
+    }
+
+    // Restore orchestrator IDO properties
+    if (this.permanent?.ido) {
+      for (const [propertyKey, iddKey] of Object.entries(this.permanent.ido)) {
+        try {
+          // Simulate orchestrator IDO access - in real implementation, this would access the orchestrator
+          const orchestratorData = this.getOrchestratorData();
+          const iddValue = orchestratorData[iddKey];
+          
+          if (iddValue !== undefined) {
+            // Check if the property is a signal (has a 'set' method)
+            const storeProperty = this.store[propertyKey as keyof T];
+            if (storeProperty && typeof storeProperty === 'object' && 'set' in storeProperty && typeof (storeProperty as any).set === 'function') {
+              // It's a signal - update the signal with the restored value
+              (storeProperty as any).set(iddValue);
+            } else {
+              // Regular property - restore directly
+              this.store[propertyKey as keyof T] = iddValue as T[keyof T];
+            }
+            
+            console.log(`✅ Restored IDO['${iddKey}']`);
+          }
+        } catch (error) {
+          console.error(`Failed to restore ${propertyKey} from orchestrator:`, error);
+        }
+      }
     }
   }
 
+  /**
+   * Get all stored keys for this session
+   */
+  getStoredKeys(): string[] {
+    const keys: string[] = [];
+    const prefixLength = this.KEY_PREFIX.length;
+    
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith(this.KEY_PREFIX)) {
+        keys.push(key.substring(prefixLength));
+      }
+    }
+    
+    return keys;
+  }
+
+  /**
+   * Clear all stored data for this session
+   */
+  clear(): void {
+    const storedKeys = this.getStoredKeys();
+    
+    for (const key of storedKeys) {
+      const storageKey = this.KEY_PREFIX + key;
+      sessionStorage.removeItem(storageKey);
+    }
+    
+    console.log(`🗑️ Cleared ${storedKeys.length} stored keys`);
+  }
+
+  /**
+   * Private method to handle permanent storage based on configuration
+   */
+  private handlePermanentStorage<K extends keyof T>(key: K, value: UnwrapSignal<T[K]>): void {
+    if (!this.permanent) return;
+
+    // Handle localStorage
+    if (this.permanent.localStorage && this.permanent.localStorage.includes(String(key))) {
+      const serializedValue = JSON.stringify(value);
+      localStorage.setItem(this.KEY_PREFIX + String(key), serializedValue);
+      console.log(`💾 Persisted ${String(key)} to localStorage`);
+    }
+
+    // Handle sessionStorage - already handled in set method
+    
+    // Handle orchestrator IDO
+    if (this.permanent.ido && this.permanent.ido[String(key)]) {
+      const orchestratorKey = this.permanent.ido[String(key)];
+      this.setOrchestratorData(orchestratorKey, value);
+      console.log(`🔄 Transferred ${String(key)} to orchestrator IDO as '${String(orchestratorKey)}'`);
+    }
+  }
+
+  /**
+   * Get a value from sessionStorage by key
+   * @param key The key to retrieve
+   * @param defaultValue Default value if key not found
+   */
+  get<K extends keyof T>(key: K, defaultValue?: UnwrapSignal<T[K]>): UnwrapSignal<T[K]> | undefined {
+    const storageKey = this.KEY_PREFIX + String(key);
+    const storedValue = sessionStorage.getItem(storageKey);
+    
+    if (storedValue === null) {
+      return defaultValue;
+    }
+    
+    try {
+      return JSON.parse(storedValue) as UnwrapSignal<T[K]>;
+    } catch (error) {
+      console.error(`Failed to parse stored value for ${String(key)}:`, error);
+      return defaultValue;
+    }
+  }
+
+  /**
+   * Remove a value from sessionStorage by key
+   * @param key The key to remove
+   */
   remove<K extends keyof T>(key: K): void {
-    sessionStorage.removeItem(this.KEY_PREFIX + String(key));
-    delete this.store[key];
+    const storageKey = this.KEY_PREFIX + String(key);
+    sessionStorage.removeItem(storageKey);
+  }
+
+  /**
+   * Remove all values for this session
+   */
+  removeAll(): void {
+    this.clear();
   }
 
   /**
    * Get all stored values
-   * For signals: returns unwrapped values
-   * For regular properties: returns values directly
    */
-  getAll(): Partial<Record<keyof T, any>> {
-    const result: Partial<Record<keyof T, any>> = {};
-    const keys = Object.keys(this.store) as Array<keyof T>;
-    keys.forEach((key) => {
-      const value = this.get(key);
-      if (value !== null) {
+  getAll(): Record<string, any> {
+    const result: Record<string, any> = {};
+    
+    for (const key of Object.keys(this.store)) {
+      const value = this.get(key as keyof T);
+      if (value !== undefined) {
         result[key] = value;
       }
-    });
+    }
+    
     return result;
   }
 
   /**
-   * Set all values from the store
-   * For signals: extracts current values and stores them
-   * For regular properties: stores directly
+   * Initialize storage (for backward compatibility)
+   * @param orchestratorStorage Orchestrator storage data (ignored in this implementation)
    */
-  setAll(): void {
-    const keys = Object.keys(this.store) as Array<keyof T>;
-    keys.forEach((key) => {
-      const storeProperty = this.store[key];
-
-      // Check if it's a signal
-      if (storeProperty && typeof storeProperty === 'object' && 'set' in storeProperty && typeof (storeProperty as any).set === 'function') {
-        // It's a signal - get the current value
-        const currentValue = (storeProperty as any)();
-        this.set(key, currentValue);
-      } else {
-        // Regular property
-        this.set(key, storeProperty as any);
-      }
-    });
-  }
-
-  removeAll(): void {
-    // Clear all items with the prefix from sessionStorage
-    const keys = Object.keys(sessionStorage);
-    keys.forEach((key) => {
-      if (key.startsWith(this.KEY_PREFIX)) {
-        sessionStorage.removeItem(key);
-      }
-    });
-    // Clear the local store
-    const storeKeys = Object.keys(this.store) as Array<keyof T>;
-    storeKeys.forEach((key) => {
-      delete this.store[key];
-    });
+  init(orchestratorStorage?: any): void {
+    // Restore data on initialization
+    this.restore();
   }
 
   /**
-   * Enhanced exit method with selective persistence
-   * Called when feature is destroyed (ngOnDestroy of entry component)
-   * 
-   * Behavior:
-   * - If no permanent config: calls removeAll() (backward compatible)
-   * - If permanent config exists:
-   *   - localStorage properties: moved from sessionStorage to localStorage
-   *   - sessionStorage properties: kept in sessionStorage (not removed)
-   *   - ido properties: transferred to orchestrator and stored in localStorage
-   *   - Other properties: removed as usual
-   * 
-   * @param orchestratorStorage - Optional orchestrator SessionStorage for IDO transfer
+   * Exit/cleanup storage (for backward compatibility)
+   * @param orchestratorStorage Orchestrator storage data (ignored in this implementation)
    */
-  exit(orchestratorStorage?: SessionStorage<any>): void {
-    // Backward compatibility: if no permanent config, use removeAll
-    if (!this.permanent) {
-      this.removeAll();
-      return;
-    }
-
-    const { localStorage: localStorageKeys = [], sessionStorage: sessionStorageKeys = [], ido = {} } = this.permanent;
-
-    // Get all current keys in sessionStorage with this prefix
-    const allKeys = Object.keys(sessionStorage).filter(key => key.startsWith(this.KEY_PREFIX));
-
-    allKeys.forEach((fullKey) => {
-      const propertyKey = fullKey.replace(this.KEY_PREFIX, '');
-
-      // Check if this property should be persisted in localStorage
-      if (localStorageKeys.includes(propertyKey)) {
-        const value = sessionStorage.getItem(fullKey);
-        if (value !== null) {
-          localStorage.setItem(fullKey, value);
-        }
-        sessionStorage.removeItem(fullKey);
-      }
-      // Check if this property should remain in sessionStorage
-      else if (sessionStorageKeys.includes(propertyKey)) {
-        console.warn(`${this.KEY_PREFIX}exit: Keeping '${propertyKey}' in sessionStorage`);
-        // Do nothing - keep it in sessionStorage
-      }
-      // Otherwise, remove it
-      else {
-        sessionStorage.removeItem(fullKey);
-        console.warn(`${this.KEY_PREFIX}exit: Removed '${propertyKey}' from sessionStorage`);
-      }
-    });
-
-    // Process IDO properties - transfer to orchestrator
-    if (Object.keys(ido).length > 0 && orchestratorStorage) {
-      const idoData: Record<string, any> = {};
-
-      Object.entries(ido).forEach(([stateProperty, idoProperty]) => {
-        const value = this.get(stateProperty as keyof T);
-        if (value !== null && value !== undefined) {
-          idoData[idoProperty] = value;
-          console.warn(`${this.KEY_PREFIX}exit: Prepared IDO property '${idoProperty}' from state '${stateProperty}'`);
-        }
-      });
-
-      // Store IDO in orchestrator's localStorage
-      if (Object.keys(idoData).length > 0) {
-        const featureName = this.KEY_PREFIX.replace(/-$/, '').toLowerCase();
-        const orchestratorIdoKey = `${orchestratorStorage.KEY_PREFIX}${featureName}Ido`;
-
-        try {
-          localStorage.setItem(orchestratorIdoKey, JSON.stringify(idoData));
-        } catch (error) {
-          console.error(`${this.KEY_PREFIX}exit: Error storing IDO in orchestrator:`, error);
-        }
-      }
-    }
-
-    // Clear the local store for non-persistent properties
-    const storeKeys = Object.keys(this.store) as Array<keyof T>;
-    storeKeys.forEach((key) => {
-      const keyStr = String(key);
-      if (!localStorageKeys.includes(keyStr) && !sessionStorageKeys.includes(keyStr)) {
-        delete this.store[key];
-      }
-    });
+  exit(orchestratorStorage?: any): void {
+    // Cleanup if needed
+    this.clear();
   }
 
   /**
-   * Initialize method that stores data based on the permanent configuration
-   * Should be called when setting up the SessionStorage instance with persistence needs
+   * Simulate setting orchestrator data
+   * In real implementation, this would interface with the orchestrator
    */
-  init(orchestratorStorage?: SessionStorage<any>): void {
-    if (!this.permanent) {
-      console.warn(`${this.KEY_PREFIX}init: No permanent config defined, skipping initialization`);
-      return;
-    }
-
-    const { localStorage: localStorageKeys = [], sessionStorage: sessionStorageKeys = [], ido = {} } = this.permanent;
-
-    // Process localStorage properties
-    localStorageKeys.forEach((key) => {
-      const storeProperty = (this.store as any)[key];
-      if (storeProperty !== undefined && storeProperty !== null) {
-        const fullKey = this.KEY_PREFIX + key;
-
-        // Check if it's a signal
-        let valueToStore;
-        if (storeProperty && typeof storeProperty === 'object' && 'set' in storeProperty && typeof (storeProperty as any).set === 'function') {
-          // It's a signal - get the current value
-          valueToStore = (storeProperty as any)();
-        } else {
-          // Regular property
-          valueToStore = storeProperty;
-        }
-
-        try {
-          const serializedValue = JSON.stringify(valueToStore);
-          localStorage.setItem(fullKey, serializedValue);
-        } catch (error) {
-          console.error(`${this.KEY_PREFIX}init: Error storing '${key}' in localStorage:`, error);
-        }
-      }
-    });
-
-    // Process sessionStorage properties
-    sessionStorageKeys.forEach((key) => {
-      const storeProperty = (this.store as any)[key];
-
-      if (storeProperty !== undefined && storeProperty !== null) {
-        const fullKey = this.KEY_PREFIX + key;
-
-        // Check if it's a signal
-        let valueToStore;
-        if (storeProperty && typeof storeProperty === 'object' && 'set' in storeProperty && typeof (storeProperty as any).set === 'function') {
-          // It's a signal - get the current value
-          valueToStore = (storeProperty as any)();
-        } else {
-          // Regular property
-          valueToStore = storeProperty;
-        }
-
-        // Store even if the unwrapped value is null (but not if the property itself doesn't exist)
-        try {
-          const serializedValue = JSON.stringify(valueToStore);
-          sessionStorage.setItem(fullKey, serializedValue);
-        } catch (error) {
-          console.error(`${this.KEY_PREFIX}init: Error storing '${key}' in sessionStorage:`, error);
-        }
-      } else {
-        console.warn(`${this.KEY_PREFIX}init: Skipping '${key}' - property is undefined or null`);
-      }
-    });
-
-    // Process IDO properties if orchestrator storage is provided
-    if (Object.keys(ido).length > 0 && orchestratorStorage) {
-      const idoData: Record<string, any> = {};
-
-      Object.entries(ido).forEach(([stateProperty, idoProperty]) => {
-        const storeProperty = (this.store as any)[stateProperty];
-        if (storeProperty !== undefined && storeProperty !== null) {
-          // Check if it's a signal
-          let valueToStore;
-          if (storeProperty && typeof storeProperty === 'object' && 'set' in storeProperty && typeof (storeProperty as any).set === 'function') {
-            // It's a signal - get the current value
-            valueToStore = (storeProperty as any)();
-          } else {
-            // Regular property
-            valueToStore = storeProperty;
-          }
-
-          idoData[idoProperty] = valueToStore;
-        }
-      });
-
-      // Store IDO in orchestrator's localStorage
-      if (Object.keys(idoData).length > 0) {
-        const featureName = this.KEY_PREFIX.replace(/-$/, '').toLowerCase();
-        const orchestratorIdoKey = `${orchestratorStorage.KEY_PREFIX}${featureName}Ido`;
-
-        try {
-          localStorage.setItem(orchestratorIdoKey, JSON.stringify(idoData));
-        } catch (error) {
-          console.error(`${this.KEY_PREFIX}init: Error storing IDO in orchestrator:`, error);
-        }
-      }
-    }
+  private setOrchestratorData(key: string, value: any): void {
+    // Simulate orchestrator storage
+    (window as any).__ORCHESTRATOR_DATA__ = (window as any).__ORCHESTRATOR_DATA__ || {};
+    (window as any).__ORCHESTRATOR_DATA__[key] = value;
   }
 
   /**
-   * Restore method to load persisted data on feature initialization
-   * Should be called in entry component's ngOnInit
-   * 
-   * Loads data from:
-   * - localStorage (for localStorage properties)
-   * - sessionStorage (for sessionStorage properties)
-   * - orchestrator localStorage (for IDO properties)
+   * Simulate getting orchestrator data
+   * In real implementation, this would interface with the orchestrator
    */
-  restore(orchestratorStorage?: SessionStorage<any>): void {
-    if (!this.permanent) {
-      console.warn(`${this.KEY_PREFIX}restore: No permanent config, skipping restore`);
-      return;
-    }
-    const { localStorage: localStorageKeys = [], sessionStorage: sessionStorageKeys = [], ido = {} } = this.permanent;
-
-    // Restore from localStorage
-    localStorageKeys.forEach((key) => {
-      const fullKey = this.KEY_PREFIX + key;
-      const value = localStorage.getItem(fullKey);
-      if (value !== null && value !== 'undefined') {
-        try {
-          sessionStorage.setItem(fullKey, value);
-          const parsedValue = JSON.parse(value);
-          (this.store as any)[key] = parsedValue;
-        } catch (error) {
-          console.error(`${this.KEY_PREFIX}restore: Error parsing localStorage value for '${key}':`, error);
-        }
-      }
-    });
-
-    // Restore from sessionStorage
-    sessionStorageKeys.forEach((key) => {
-      const fullKey = this.KEY_PREFIX + key;
-      const value = sessionStorage.getItem(fullKey);
-      if (value !== null && value !== 'undefined') {
-        try {
-          const parsedValue = JSON.parse(value);
-          (this.store as any)[key] = parsedValue;
-        } catch (error) {
-          console.error(`${this.KEY_PREFIX}restore: Error parsing sessionStorage value for '${key}':`, error);
-        }
-      }
-    });
-
-    // Restore from orchestrator IDO
-    if (Object.keys(ido).length > 0 && orchestratorStorage) {
-      const featureName = this.KEY_PREFIX.replace(/-$/, '').toLowerCase();
-      const orchestratorIdoKey = `${orchestratorStorage.KEY_PREFIX}${featureName}Ido`;
-
-      try {
-        const idoDataStr = localStorage.getItem(orchestratorIdoKey);
-        if (idoDataStr && idoDataStr !== 'undefined') {
-          const idoData = JSON.parse(idoDataStr);
-
-          // Map IDO properties back to state properties
-          Object.entries(ido).forEach(([stateProperty, idoProperty]) => {
-            if (idoData[idoProperty] !== undefined) {
-              (this.store as any)[stateProperty] = idoData[idoProperty];
-              // Also store in sessionStorage
-              const fullKey = this.KEY_PREFIX + stateProperty;
-              sessionStorage.setItem(fullKey, JSON.stringify(idoData[idoProperty]));
-            }
-          });
-        }
-      } catch (error) {
-        console.error(`${this.KEY_PREFIX}restore: Error restoring from orchestrator IDO:`, error);
-      }
-    }
+  private getOrchestratorData(): Record<string, any> {
+    return (window as any).__ORCHESTRATOR_DATA__ || {};
   }
 }
+
+// COMPATIBILITY EXPORTS
+// These exports enable both interface and class usage patterns for seamless interoperability
+
+// Type alias for backward compatibility with existing code
+export type { IPermanentConfig as PermanentConfig };
+
+// Class alias for blueprint compatibility
+export { PermanentConfigImpl as PermanentConfigClass };
+
+// Constants for static usage (blueprint compatibility)
+export const PERMANENT_CONFIG_DEFAULTS = {
+  localStorage: [] as string[],
+  sessionStorage: [] as string[],
+  ido: {} as Record<string, string>
+};

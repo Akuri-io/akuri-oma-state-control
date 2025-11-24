@@ -1,6 +1,6 @@
 {
   "name": "akuri-oma-state-control",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Observable Model Architecture (OMA) state management library for Angular with Signals and RxJS support",
   "main": "dist/fesm2022/akuri-oma-state-control.mjs",
   "module": "dist/fesm2022/akuri-oma-state-control.mjs",

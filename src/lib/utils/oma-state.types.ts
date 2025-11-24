@@ -1,4 +1,11 @@
 /**
+ * Type helper to unwrap signal types
+ * If T is a WritableSignal<V>, returns V, otherwise returns T
+ * Re-exported from session-storage for convenience and compatibility
+ */
+export type UnwrapSignal<T> = T extends { (): infer V } ? V : T;
+
+/**
  * Configuration interface for OMA state field
  */
 export interface OMAStateField {
